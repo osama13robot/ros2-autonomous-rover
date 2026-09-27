@@ -48,7 +48,7 @@ sudo apt install -y \
 ## 3. Get and build the workspace
 
 ```bash
-git clone <this-repo-url> ~/ros2-autonomous-rover
+git clone https://github.com/osama13robot/ros2-autonomous-rover.git ~/ros2-autonomous-rover
 cd ~/ros2-autonomous-rover
 source /opt/ros/jazzy/setup.bash
 rosdep update && rosdep install --from-paths src --ignore-src -y   # catches anything missing

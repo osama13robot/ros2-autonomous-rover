@@ -6,6 +6,7 @@
 ![Gazebo Harmonic](https://img.shields.io/badge/Gazebo-Harmonic-F58113)
 ![Ubuntu 24.04](https://img.shields.io/badge/Ubuntu-24.04-E95420)
 ![License](https://img.shields.io/badge/license-Apache--2.0-blue)
+[![CI](https://github.com/osama13robot/ros2-autonomous-rover/actions/workflows/ci.yml/badge.svg)](https://github.com/osama13robot/ros2-autonomous-rover/actions/workflows/ci.yml)
 
 | The robot (rendered from its printable parts) | A map it built completely on its own |
 |---|---|
@@ -27,7 +28,7 @@ documented so you can understand it and change it.
 | 🗺️ **Navigation** | Nav2 with the Smac planner, MPPI controller, 3D voxel costmaps that use the depth camera, and a collision monitor |
 | 🤖 **Autonomous exploration** | a frontier explorer that maps unknown space by itself, then drives back home |
 | 🎮 **Manual and autonomous modes** | drive with the keyboard; one key switches between MANUAL and AUTO, and any drive key takes over |
-| 🧪 **Learning material** | 13 guides, 8 hands-on labs, a runnable Nav2 Python example, unit tests and CI |
+| 🧪 **Learning material** | 14 guides, 8 hands-on labs, a runnable Nav2 Python example, unit tests and CI |
 
 ## Quick start (about 15 minutes)
 
@@ -36,7 +37,7 @@ On **Ubuntu 24.04** with **ROS 2 Jazzy** installed ([full install guide](docs/01
 ```bash
 sudo apt install ros-jazzy-ros-gz ros-jazzy-navigation2 ros-jazzy-slam-toolbox \
   ros-jazzy-robot-localization ros-jazzy-xacro ros-jazzy-joint-state-publisher-gui python3-scipy
-git clone <this-repo-url> ~/ros2-autonomous-rover
+git clone https://github.com/osama13robot/ros2-autonomous-rover.git ~/ros2-autonomous-rover
 cd ~/ros2-autonomous-rover
 source /opt/ros/jazzy/setup.bash
 colcon build --symlink-install
