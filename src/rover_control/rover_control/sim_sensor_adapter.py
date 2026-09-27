@@ -11,6 +11,7 @@ On the real robot, the motor/IMU/camera drivers publish these topics directly.
 """
 import numpy as np
 import rclpy
+from rclpy.executors import ExternalShutdownException
 from nav_msgs.msg import Odometry
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
@@ -78,8 +79,13 @@ def main(args=None):
     node = SimSensorAdapter()
     try:
         rclpy.spin(node)
-    except (KeyboardInterrupt, rclpy.executors.ExternalShutdownException):
+    except (KeyboardInterrupt, ExternalShutdownException):
         pass
+    except Exception:
+        # a callback that was still running when Ctrl-C shut ROS down may fail (for example
+        # publishing on an invalidated context); that is a normal exit, not a crash
+        if rclpy.ok():
+            raise
     finally:
         node.destroy_node()
         rclpy.try_shutdown()

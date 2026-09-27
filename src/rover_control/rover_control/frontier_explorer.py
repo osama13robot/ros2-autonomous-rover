@@ -19,6 +19,7 @@ import uuid
 
 import numpy as np
 import rclpy
+from rclpy.executors import ExternalShutdownException
 from action_msgs.msg import GoalStatus, GoalStatusArray
 from geometry_msgs.msg import Point, PoseStamped
 from nav2_msgs.action import NavigateToPose
@@ -274,8 +275,9 @@ class FrontierExplorer(Node):
 
     def robot_xy(self):
         try:
-            t = self.tf_buffer.lookup_transform(self.global_frame, self.robot_frame, Time(),
-                                                timeout=Duration(seconds=0.1))
+            # no timeout: never block inside a timer callback (with sim time a stopped
+            # simulator would freeze the wait); the next planning cycle simply retries
+            t = self.tf_buffer.lookup_transform(self.global_frame, self.robot_frame, Time())
         except TransformException as ex:
             self.set_status(f'WAITING for TF ({self.global_frame} -> {self.robot_frame})')
             self.get_logger().debug(str(ex))
@@ -389,8 +391,13 @@ def main(args=None):
     node = FrontierExplorer()
     try:
         rclpy.spin(node)
-    except (KeyboardInterrupt, rclpy.executors.ExternalShutdownException):
+    except (KeyboardInterrupt, ExternalShutdownException):
         pass
+    except Exception:
+        # a callback that was still running when Ctrl-C shut ROS down may fail (for example
+        # publishing on an invalidated context); that is a normal exit, not a crash
+        if rclpy.ok():
+            raise
     finally:
         node.destroy_node()
         rclpy.try_shutdown()

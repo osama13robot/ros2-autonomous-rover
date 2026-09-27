@@ -18,6 +18,7 @@ old goal later by surprise.
 import math
 
 import rclpy
+from rclpy.executors import ExternalShutdownException
 from action_msgs.srv import CancelGoal
 from geometry_msgs.msg import Twist
 from rclpy.node import Node
@@ -130,8 +131,13 @@ def main(args=None):
     node = ModeManager()
     try:
         rclpy.spin(node)
-    except (KeyboardInterrupt, rclpy.executors.ExternalShutdownException):
+    except (KeyboardInterrupt, ExternalShutdownException):
         pass
+    except Exception:
+        # a callback that was still running when Ctrl-C shut ROS down may fail (for example
+        # publishing on an invalidated context); that is a normal exit, not a crash
+        if rclpy.ok():
+            raise
     finally:
         node.destroy_node()
         rclpy.try_shutdown()
