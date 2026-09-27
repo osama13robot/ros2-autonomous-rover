@@ -1,0 +1,316 @@
+<?xml version="1.0"?>
+<!--
+  Rover: a small 3D-printable two-deck differential-drive robot.
+
+  Frames (REP-105 / REP-103):
+    base_footprint          on the ground, below the wheel axle
+    base_link               on the wheel axle (robot centre)
+    left/right_wheel_link   drive wheels (continuous joints)
+    front/rear_caster_link  passive ball casters
+    imu_link                IMU on the lower deck
+    lidar_link              2D 360 deg lidar on the upper deck (scan plane)
+    camera_link             RGB-D camera body (x forward)
+    camera_optical_link     RGB-D optical frame (z forward, x right, y down)
+
+  All dimensions come from config/dimensions.yaml (shared with the STL generator).
+-->
+<robot name="rover" xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <xacro:arg name="sim_gazebo" default="true"/>
+  <xacro:arg name="use_meshes" default="true"/>
+
+  <xacro:include filename="$(find rover_description)/urdf/inertial_macros.xacro"/>
+  <xacro:include filename="$(find rover_description)/urdf/materials.xacro"/>
+
+  <xacro:property name="d" value="${xacro.load_yaml('$(find rover_description)/config/dimensions.yaml')}"/>
+  <xacro:property name="use_meshes" value="$(arg use_meshes)"/>
+  <xacro:property name="mesh_dir" value="package://rover_description/meshes"/>
+  <xacro:property name="mm" value="0.001 0.001 0.001"/>
+
+  <!-- ===== derived dimensions ===== -->
+  <xacro:property name="L" value="${d['chassis']['length']}"/>
+  <xacro:property name="W" value="${d['chassis']['width']}"/>
+  <xacro:property name="T" value="${d['chassis']['plate_thickness']}"/>
+  <xacro:property name="R" value="${d['wheel']['radius']}"/>
+  <xacro:property name="WW" value="${d['wheel']['width']}"/>
+  <xacro:property name="deck" value="${d['chassis']['deck_spacing']}"/>
+  <xacro:property name="inset" value="${d['chassis']['standoff_inset']}"/>
+  <!-- heights relative to base_link (wheel axle) -->
+  <xacro:property name="z_lower_bottom" value="${d['chassis']['lower_plate_z'] - R}"/>
+  <xacro:property name="z_lower_top" value="${z_lower_bottom + T}"/>
+  <xacro:property name="z_upper_bottom" value="${z_lower_top + deck}"/>
+  <xacro:property name="z_upper_top" value="${z_upper_bottom + T}"/>
+  <xacro:property name="wheel_y" value="${W/2 + d['wheel']['gap'] + WW/2}"/>
+  <xacro:property name="caster_r" value="${d['caster']['ball_radius']}"/>
+  <xacro:property name="caster_x" value="${d['caster']['x_offset']}"/>
+  <xacro:property name="spacer_h" value="${d['chassis']['lower_plate_z'] - d['caster']['body_height']}"/>
+  <xacro:property name="motor_r" value="${d['motor']['diameter']/2}"/>
+  <xacro:property name="motor_l" value="${d['motor']['length']}"/>
+  <xacro:property name="lidar" value="${d['lidar']}"/>
+  <xacro:property name="cam" value="${d['camera']}"/>
+
+  <!-- ================= base ================= -->
+  <link name="base_footprint"/>
+
+  <joint name="base_joint" type="fixed">
+    <parent link="base_footprint"/>
+    <child link="base_link"/>
+    <origin xyz="0 0 ${R}" rpy="0 0 0"/>
+  </joint>
+
+  <xacro:macro name="plate_visual" params="z mesh">
+    <visual>
+      <xacro:if value="${use_meshes}">
+        <origin xyz="0 0 ${z}" rpy="0 0 0"/>
+        <geometry><mesh filename="${mesh_dir}/${mesh}.stl" scale="${mm}"/></geometry>
+      </xacro:if>
+      <xacro:unless value="${use_meshes}">
+        <origin xyz="0 0 ${z + T/2}" rpy="0 0 0"/>
+        <geometry><box size="${L} ${W} ${T}"/></geometry>
+      </xacro:unless>
+      <material name="printed_orange"/>
+    </visual>
+  </xacro:macro>
+
+  <link name="base_link">
+    <!-- lower deck -->
+    <xacro:plate_visual z="${z_lower_bottom}" mesh="base_plate"/>
+    <!-- upper deck -->
+    <xacro:plate_visual z="${z_upper_bottom}" mesh="top_plate"/>
+
+    <!-- standoffs -->
+    <xacro:macro name="standoff" params="sx sy">
+      <visual>
+        <origin xyz="${sx*(L/2-inset)} ${sy*(W/2-inset)} ${z_lower_top + deck/2}"/>
+        <geometry><cylinder radius="0.0035" length="${deck}"/></geometry>
+        <material name="brass"/>
+      </visual>
+    </xacro:macro>
+    <xacro:standoff sx="1" sy="1"/>
+    <xacro:standoff sx="1" sy="-1"/>
+    <xacro:standoff sx="-1" sy="1"/>
+    <xacro:standoff sx="-1" sy="-1"/>
+
+    <!-- gear motors + printed brackets -->
+    <xacro:macro name="motor_visual" params="side">
+      <visual>
+        <origin xyz="0 ${side*(W/2 - 0.004 - motor_l/2)} 0" rpy="${pi/2} 0 0"/>
+        <geometry><cylinder radius="${motor_r}" length="${motor_l}"/></geometry>
+        <material name="metal"/>
+      </visual>
+      <xacro:if value="${use_meshes}">
+        <visual>
+          <origin xyz="0 ${side*W/2} ${z_lower_bottom}" rpy="${pi if side > 0 else 0} ${0 if side > 0 else pi} 0"/>
+          <geometry><mesh filename="${mesh_dir}/motor_bracket.stl" scale="${mm}"/></geometry>
+          <material name="printed_grey"/>
+        </visual>
+      </xacro:if>
+    </xacro:macro>
+    <xacro:motor_visual side="1"/>
+    <xacro:motor_visual side="-1"/>
+
+    <!-- electronics between the decks: Raspberry Pi 5 + battery -->
+    <visual>
+      <origin xyz="-0.050 0 ${z_lower_top + 0.012}"/>
+      <geometry><box size="0.085 0.056 0.018"/></geometry>
+      <material name="pcb_green"/>
+    </visual>
+    <visual>
+      <origin xyz="0.0275 0 ${z_lower_top + 0.0125}"/>
+      <geometry><box size="0.034 0.105 0.025"/></geometry>
+      <material name="battery_blue"/>
+    </visual>
+
+    <!-- camera riser -->
+    <xacro:if value="${use_meshes}">
+      <visual>
+        <origin xyz="${cam['x']} 0 ${z_lower_top}"/>
+        <geometry><mesh filename="${mesh_dir}/camera_riser.stl" scale="${mm}"/></geometry>
+        <material name="printed_grey"/>
+      </visual>
+      <visual>
+        <origin xyz="${lidar['x']} 0 ${z_upper_top}"/>
+        <geometry><mesh filename="${mesh_dir}/lidar_riser.stl" scale="${mm}"/></geometry>
+        <material name="printed_grey"/>
+      </visual>
+    </xacro:if>
+
+    <!-- one simple collision box for the whole chassis (both decks) -->
+    <collision>
+      <origin xyz="0 0 ${(z_lower_bottom + z_upper_top)/2}"/>
+      <geometry><box size="${L} ${W} ${z_upper_top - z_lower_bottom}"/></geometry>
+    </collision>
+
+    <xacro:box_inertia m="${d['chassis']['mass_lower'] + d['chassis']['mass_upper'] + 2*d['motor']['mass']}"
+                       x="${L}" y="${W}" z="${z_upper_top - z_lower_bottom}">
+      <origin xyz="0 0 ${z_lower_top + 0.01}"/>
+    </xacro:box_inertia>
+  </link>
+
+  <!-- ================= drive wheels ================= -->
+  <xacro:macro name="wheel" params="prefix side">
+    <link name="${prefix}_wheel_link">
+      <xacro:if value="${use_meshes}">
+        <visual>
+          <origin xyz="0 ${side*WW/2} 0" rpy="${side*pi/2} 0 0"/>
+          <geometry><mesh filename="${mesh_dir}/wheel_hub.stl" scale="${mm}"/></geometry>
+          <material name="printed_grey"/>
+        </visual>
+        <visual>
+          <origin xyz="0 ${side*WW/2} 0" rpy="${side*pi/2} 0 0"/>
+          <geometry><mesh filename="${mesh_dir}/tire_tpu.stl" scale="${mm}"/></geometry>
+          <material name="rubber"/>
+        </visual>
+      </xacro:if>
+      <xacro:unless value="${use_meshes}">
+        <visual>
+          <origin xyz="0 0 0" rpy="${pi/2} 0 0"/>
+          <geometry><cylinder radius="${R}" length="${WW}"/></geometry>
+          <material name="rubber"/>
+        </visual>
+      </xacro:unless>
+      <collision>
+        <origin xyz="0 0 0" rpy="${pi/2} 0 0"/>
+        <geometry><cylinder radius="${R}" length="${WW}"/></geometry>
+      </collision>
+      <xacro:cylinder_inertia m="${d['wheel']['mass']}" r="${R}" h="${WW}">
+        <origin xyz="0 0 0" rpy="${pi/2} 0 0"/>
+      </xacro:cylinder_inertia>
+    </link>
+
+    <joint name="${prefix}_wheel_joint" type="continuous">
+      <parent link="base_link"/>
+      <child link="${prefix}_wheel_link"/>
+      <origin xyz="0 ${side*wheel_y} 0" rpy="0 0 0"/>
+      <axis xyz="0 1 0"/>
+      <dynamics damping="0.01" friction="0.0"/>
+    </joint>
+
+    <gazebo reference="${prefix}_wheel_link">
+      <mu1>1.0</mu1>
+      <mu2>1.0</mu2>
+      <kp>1e6</kp>
+      <kd>100.0</kd>
+      <minDepth>0.001</minDepth>
+    </gazebo>
+  </xacro:macro>
+
+  <xacro:wheel prefix="left" side="1"/>
+  <xacro:wheel prefix="right" side="-1"/>
+
+  <!-- ================= ball casters ================= -->
+  <xacro:macro name="caster" params="prefix sx">
+    <link name="${prefix}_caster_link">
+      <xacro:if value="${use_meshes}">
+        <visual>
+          <origin xyz="0 0 ${z_lower_bottom - spacer_h - (caster_r - R)}"/>
+          <geometry><mesh filename="${mesh_dir}/caster_spacer.stl" scale="${mm}"/></geometry>
+          <material name="printed_grey"/>
+        </visual>
+      </xacro:if>
+      <visual>
+        <origin xyz="0 0 ${(d['caster']['body_height'] - caster_r)/2}"/>
+        <geometry><cylinder radius="0.011" length="${d['caster']['body_height'] - caster_r}"/></geometry>
+        <material name="metal"/>
+      </visual>
+      <visual>
+        <geometry><sphere radius="${caster_r}"/></geometry>
+        <material name="metal"/>
+      </visual>
+      <collision>
+        <geometry><sphere radius="${caster_r}"/></geometry>
+      </collision>
+      <xacro:sphere_inertia m="0.02" r="${caster_r}">
+        <origin xyz="0 0 0"/>
+      </xacro:sphere_inertia>
+    </link>
+
+    <joint name="${prefix}_caster_joint" type="fixed">
+      <parent link="base_link"/>
+      <child link="${prefix}_caster_link"/>
+      <!-- ball centre sits one ball-radius above the ground -->
+      <origin xyz="${sx*caster_x} 0 ${caster_r - R}"/>
+    </joint>
+
+    <gazebo reference="${prefix}_caster_link">
+      <mu1>0.0</mu1>
+      <mu2>0.0</mu2>
+      <kp>1e6</kp>
+      <kd>100.0</kd>
+    </gazebo>
+  </xacro:macro>
+
+  <xacro:caster prefix="front" sx="1"/>
+  <xacro:caster prefix="rear" sx="-1"/>
+
+  <!-- ================= IMU ================= -->
+  <link name="imu_link">
+    <visual>
+      <geometry><box size="0.020 0.015 0.003"/></geometry>
+      <material name="pcb_blue"/>
+    </visual>
+  </link>
+  <joint name="imu_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="imu_link"/>
+    <origin xyz="${d['imu']['x']} ${d['imu']['y']} ${z_lower_top + 0.006}"/>
+  </joint>
+
+  <!-- ================= 2D lidar ================= -->
+  <link name="lidar_link">
+    <visual>
+      <!-- body below the scan plane -->
+      <origin xyz="0 0 ${-lidar['scan_plane'] + lidar['height']/2}"/>
+      <geometry><cylinder radius="${lidar['size']/2}" length="${lidar['height']}"/></geometry>
+      <material name="dark"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 ${-lidar['scan_plane'] + lidar['height']/2}"/>
+      <geometry><cylinder radius="${lidar['size']/2}" length="${lidar['height']}"/></geometry>
+    </collision>
+    <xacro:cylinder_inertia m="${lidar['mass']}" r="${lidar['size']/2}" h="${lidar['height']}">
+      <origin xyz="0 0 ${-lidar['scan_plane'] + lidar['height']/2}"/>
+    </xacro:cylinder_inertia>
+  </link>
+  <joint name="lidar_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="lidar_link"/>
+    <origin xyz="${lidar['x']} 0 ${z_upper_top + lidar['riser_height'] + lidar['scan_plane']}"/>
+  </joint>
+
+  <!-- ================= RGB-D camera ================= -->
+  <link name="camera_link">
+    <visual>
+      <geometry><box size="${cam['depth']} ${cam['width']} ${cam['height']}"/></geometry>
+      <material name="dark"/>
+    </visual>
+    <visual>
+      <origin xyz="${cam['depth']/2} 0 0"/>
+      <geometry><box size="0.001 ${cam['width']*0.8} ${cam['height']*0.5}"/></geometry>
+      <material name="glass"/>
+    </visual>
+    <collision>
+      <geometry><box size="${cam['depth']} ${cam['width']} ${cam['height']}"/></geometry>
+    </collision>
+    <xacro:box_inertia m="${cam['mass']}" x="${cam['depth']}" y="${cam['width']}" z="${cam['height']}">
+      <origin xyz="0 0 0"/>
+    </xacro:box_inertia>
+  </link>
+  <joint name="camera_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="camera_link"/>
+    <origin xyz="${cam['x']} 0 ${z_lower_top + cam['riser_height'] + cam['height']/2}" rpy="0 ${cam['pitch']} 0"/>
+  </joint>
+
+  <link name="camera_optical_link"/>
+  <joint name="camera_optical_joint" type="fixed">
+    <parent link="camera_link"/>
+    <child link="camera_optical_link"/>
+    <origin xyz="0 0 0" rpy="${-pi/2} 0 ${-pi/2}"/>
+  </joint>
+
+  <xacro:if value="$(arg sim_gazebo)">
+    <xacro:include filename="$(find rover_description)/urdf/rover.gazebo.xacro"/>
+  </xacro:if>
+
+</robot>

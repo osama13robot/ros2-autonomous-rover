@@ -1,0 +1,72 @@
+# ---------------------------------------------------------------------------
+# Rover dimensions: the single source of truth.
+#
+# Read by:
+#   * urdf/rover.urdf.xacro        (simulation / TF / Nav2 footprint)
+#   * hardware/generate_parts.py   (3D-printable STL parts)
+#
+# All values are in METERS and KILOGRAMS. If you change a value, re-run
+# hardware/generate_parts.py and rebuild the workspace.
+# ---------------------------------------------------------------------------
+
+chassis:
+  length: 0.200            # X, fits a 220x220 mm print bed
+  width: 0.150             # Y
+  plate_thickness: 0.004
+  corner_radius: 0.015
+  lower_plate_z: 0.052     # bottom of the lower deck above the ground
+  deck_spacing: 0.060      # M3 standoff length between lower and upper deck
+  standoff_inset: 0.012    # standoff hole distance from the plate edge
+  mass_lower: 0.45         # lower deck + motors + battery + electronics
+  mass_upper: 0.10         # upper deck
+
+wheel:
+  radius: 0.035            # outer radius incl. TPU tire
+  width: 0.024
+  tire_thickness: 0.003
+  gap: 0.004               # gap between chassis side and wheel inner face
+  mass: 0.06
+  shaft_diameter: 0.004    # JGA25-370 D-shaft
+  shaft_flat: 0.0005       # depth of the D flat
+
+motor:                     # JGA25-370 gear motor with hall encoder
+  diameter: 0.025
+  length: 0.068            # gearbox + motor + encoder
+  mount_hole_spacing: 0.017
+  mass: 0.10
+
+caster:                    # commercial 3/4" metal ball caster on a printed spacer
+  ball_radius: 0.0095
+  body_height: 0.025       # ball caster height (ground -> mounting face), measure yours!
+  x_offset: 0.072          # front caster at +x, rear caster at -x
+
+lidar:                     # RPLIDAR C1 (or A1/LD19, adjust size)
+  x: -0.010
+  size: 0.056
+  height: 0.041
+  riser_height: 0.010
+  scan_plane: 0.026        # optical centre above the mounting face
+  mass: 0.11
+  min_range: 0.12
+  max_range: 12.0
+  samples: 360
+  rate: 10.0
+
+camera:                    # Intel RealSense D435 / OAK-D Lite class RGB-D camera
+  x: 0.088                 # camera centre, from the chassis centre
+  width: 0.090
+  depth: 0.025
+  height: 0.025
+  riser_height: 0.008
+  pitch: 0.0               # positive = tilted down (rad)
+  mass: 0.07
+  hfov: 1.518              # 87 deg
+  image_width: 424          # D435 native 424x240 mode, light on the simulator
+  image_height: 240
+  min_depth: 0.2
+  max_depth: 6.0
+  rate: 15.0
+
+imu:                       # BNO055 / MPU-6050 / ICM-20948 breakout
+  x: 0.0
+  y: 0.0

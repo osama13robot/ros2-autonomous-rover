@@ -1,0 +1,52 @@
+# Build + unit tests + asset checks on every push and pull request.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-24.04
+    container: ros:jazzy-ros-base
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          apt-get update
+          rosdep update --rosdistro jazzy
+          rosdep install --from-paths src --ignore-src -y --rosdistro jazzy
+
+      - name: Build
+        run: |
+          source /opt/ros/jazzy/setup.bash
+          colcon build --symlink-install --event-handlers console_cohesion+
+
+      - name: Unit tests
+        run: |
+          source /opt/ros/jazzy/setup.bash
+          colcon test --packages-select rover_control --event-handlers console_cohesion+
+          colcon test-result --verbose
+
+      - name: Printable parts are watertight
+        run: python3 hardware/generate_parts.py --check
+
+      - name: URDF and worlds are well-formed
+        run: |
+          source /opt/ros/jazzy/setup.bash
+          source install/setup.bash
+          xacro src/rover_description/urdf/rover.urdf.xacro > /tmp/rover.urdf
+          python3 -c "import xml.etree.ElementTree as E; r=E.parse('/tmp/rover.urdf').getroot(); print(r.get('name'), len(r.findall('link')), 'links')"
+          for w in src/rover_gazebo/worlds/*.sdf; do python3 -c "import sys, xml.etree.ElementTree as E; E.parse(sys.argv[1]); print('ok', sys.argv[1])" "$w"; done
+
+      - name: Launch files load
+        run: |
+          source /opt/ros/jazzy/setup.bash
+          source install/setup.bash
+          ros2 launch rover_bringup sim.launch.py --show-args > /dev/null
+          ros2 launch rover_bringup robot.launch.py --show-args > /dev/null
+          ros2 launch rover_description display.launch.py --show-args > /dev/null

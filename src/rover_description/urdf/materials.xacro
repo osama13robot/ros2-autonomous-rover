@@ -1,0 +1,13 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <material name="printed_orange"><color rgba="0.95 0.45 0.10 1.0"/></material>
+  <material name="printed_grey"><color rgba="0.35 0.35 0.38 1.0"/></material>
+  <material name="rubber"><color rgba="0.08 0.08 0.08 1.0"/></material>
+  <material name="metal"><color rgba="0.70 0.70 0.72 1.0"/></material>
+  <material name="brass"><color rgba="0.80 0.65 0.25 1.0"/></material>
+  <material name="dark"><color rgba="0.12 0.12 0.14 1.0"/></material>
+  <material name="glass"><color rgba="0.10 0.20 0.35 1.0"/></material>
+  <material name="pcb_green"><color rgba="0.10 0.45 0.20 1.0"/></material>
+  <material name="pcb_blue"><color rgba="0.10 0.25 0.60 1.0"/></material>
+  <material name="battery_blue"><color rgba="0.15 0.30 0.70 1.0"/></material>
+</robot>

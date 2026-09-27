@@ -1,0 +1,30 @@
+# Parameters for the rover_control nodes
+mode_manager:
+  ros__parameters:
+    initial_mode: manual          # manual | auto
+    teleop_timeout: 0.5           # s without keyboard commands -> stop
+    nav_timeout: 0.5              # s without Nav2 commands -> stop
+    max_linear: 0.5               # m/s  hard safety clamp for both modes
+    max_angular: 2.5              # rad/s
+    cancel_nav_on_manual: true
+
+frontier_explorer:
+  ros__parameters:
+    enabled_on_start: true        # explore as soon as the robot is in AUTO mode
+    planner_period: 1.5
+    min_frontier_size: 0.40
+    clearance: 0.30
+    min_goal_distance: 0.5
+    distance_weight: 1.0
+    size_weight: 0.6
+    blacklist_radius: 0.5
+    goal_timeout: 90.0
+    stuck_timeout: 20.0
+    reached_radius: 0.45
+    return_home: true
+    done_confirmations: 5
+
+sim_sensor_adapter:
+  ros__parameters:
+    cloud_frame: camera_link
+    cloud_stride: 2
