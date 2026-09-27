@@ -63,6 +63,8 @@ Difficulty: 🟢 beginner · 🟡 intermediate · 🔴 advanced
 | **Outdoor variant** | 🔴 | bigger wheels, GPS + `navsat_transform`, outdoor Nav2 |
 | **Small arm** | 🔴 | a 3-DOF printed arm on the top deck, with MoveIt 2 |
 | **Mecanum wheels** | 🟡 | a holonomic drive: MPPI `motion_model: Omni` |
+| **Per-wheel speeds for rover4** | 🟡 | drive each of the 4 wheels at its own Ackermann speed in simulation too (ros2_control `ackermann_steering_controller` or a custom Gazebo system), removing tire scrub |
+| **4-wheel steering (rover4 → 4WS)** | 🔴 | steer the rear axle as well: tighter turns, crab motion; needs a custom controller and planner model |
 
 ## Research directions
 

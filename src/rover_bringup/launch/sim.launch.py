@@ -7,6 +7,7 @@ then, in a second terminal, drive / switch modes with the keyboard:
     ros2 run rover_control teleop_keyboard
 
 Arguments:
+    robot:=rover (2WD) | rover4 (4WD Ackermann)
     world:=rover_world.sdf | empty.sdf     headless:=false
     slam:=true (map:=... when false)       explore:=true
     initial_mode:=manual | auto            rviz:=true
@@ -27,6 +28,7 @@ def generate_launch_description():
     control_params = os.path.join(bringup_pkg, 'config', 'control.yaml')
 
     arg_names = {
+        'robot': ('rover', 'rover = 2WD differential drive, rover4 = 4WD Ackermann steering'),
         'world': ('rover_world.sdf', 'World file in rover_gazebo/worlds'),
         'headless': ('false', 'Run Gazebo without its GUI'),
         'x': ('0.0', 'Spawn x'), 'y': ('0.0', 'Spawn y'), 'yaw': ('0.0', 'Spawn yaw'),
@@ -41,7 +43,7 @@ def generate_launch_description():
 
     simulation = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(os.path.join(gazebo_pkg, 'launch', 'sim.launch.py')),
-        launch_arguments={k: cfg[k] for k in ('world', 'headless', 'x', 'y', 'yaw')}.items())
+        launch_arguments={k: cfg[k] for k in ('robot', 'world', 'headless', 'x', 'y', 'yaw')}.items())
 
     adapter = Node(package='rover_control', executable='sim_sensor_adapter', output='screen',
                    parameters=[control_params, {'use_sim_time': True}])
@@ -49,6 +51,6 @@ def generate_launch_description():
     autonomy = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(os.path.join(bringup_pkg, 'launch', 'autonomy.launch.py')),
         launch_arguments={'use_sim_time': 'true',
-                          **{k: cfg[k] for k in ('slam', 'map', 'explore', 'initial_mode', 'rviz')}}.items())
+                          **{k: cfg[k] for k in ('robot', 'slam', 'map', 'explore', 'initial_mode', 'rviz')}}.items())
 
     return LaunchDescription(args + [simulation, adapter, autonomy])

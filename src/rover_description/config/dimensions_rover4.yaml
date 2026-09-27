@@ -1,0 +1,82 @@
+# ---------------------------------------------------------------------------
+# Rover4: 4WD, front-wheel (Ackermann) steering. Single source of truth.
+#
+# Read by:
+#   * urdf/rover4.urdf.xacro        (simulation / TF / Nav2 footprint)
+#   * hardware/generate_parts.py    (3D-printable STL parts)
+#
+# Reference point: base_link sits on the REAR axle centre (bicycle-model convention for
+# car-like robots). All values in METERS / KILOGRAMS / RADIANS.
+# ---------------------------------------------------------------------------
+
+chassis:
+  rear_x: -0.040           # lower deck rear edge (from the rear axle)
+  front_x: 0.240           # lower deck front edge
+  width: 0.150             # lower deck width behind the steering area
+  front_width: 0.090       # narrower nose so the steered front wheels have room
+  narrow_from_x: 0.150     # where the nose starts
+  split_x: 0.100           # the deck is printed in two halves joined here (220 mm bed)
+  plate_thickness: 0.005
+  corner_radius: 0.012
+  lower_plate_z: 0.060     # bottom of the lower deck above the ground
+  deck_spacing: 0.060      # standoff length
+  top_length: 0.200        # upper deck (one piece)
+  top_width: 0.150
+  top_x: 0.100             # upper deck centre (from the rear axle)
+  mass_lower: 1.40         # lower deck + motors + battery + electronics + servo
+  mass_upper: 0.25
+
+wheel:
+  radius: 0.0425           # 85 mm incl. TPU tire
+  width: 0.030
+  tire_thickness: 0.004
+  mass: 0.08
+  shaft_diameter: 0.003    # N20 D-shaft
+  shaft_flat: 0.0005
+
+axles:
+  wheelbase: 0.200         # rear axle -> front axle
+  track: 0.220             # wheel centre to wheel centre
+
+steering:
+  kingpin_y: 0.080         # kingpin (steering axis) distance from the centre line
+  limit: 0.52              # max steering angle (30 deg)
+  arm_length: 0.025        # knuckle steering arm (Ackermann linkage)
+  servo: MG996R            # 40.7 x 19.7 x 42.9 mm, 13 kg.cm
+  servo_x: 0.170           # servo output shaft position
+  horn_length: 0.015
+
+motor:                     # 4x N20 micro gear motor with hall encoder, 12 V ~200 rpm
+  width: 0.012
+  height: 0.010
+  length: 0.034            # gearbox + motor + encoder
+  mass: 0.015
+
+lidar:                     # Slamtec RPLIDAR S2M1 (DFRobot): DTOF, 32 kHz, 0.05-30 m
+  x: 0.100
+  size: 0.077              # 77 x 77 mm body
+  height: 0.039
+  riser_height: 0.010
+  scan_plane: 0.027        # optical centre above the mounting face (check your unit)
+  mount_hole_spacing: 0.060  # riser -> lidar hole square; VERIFY against the S2 datasheet
+  mass: 0.19
+  min_range: 0.05
+  max_range: 30.0
+  samples: 1600            # real S2: 3200 per rev (0.1125 deg); halved in sim for speed
+  rate: 10.0
+
+camera:                    # Intel RealSense D435i (RGB-D + BMI055 IMU)
+  x: 0.2275                # camera centre (from the rear axle)
+  width: 0.090
+  depth: 0.025
+  height: 0.025
+  riser_height: 0.008
+  pitch: 0.0
+  mass: 0.072
+  hfov: 1.518              # depth 87 deg
+  image_width: 424
+  image_height: 240
+  min_depth: 0.2
+  max_depth: 6.0
+  rate: 15.0
+  imu_rate: 200.0          # D435i gyro 200/400 Hz

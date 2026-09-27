@@ -10,11 +10,13 @@ Dimensions come from src/rover_description/config/dimensions.yaml, the
 same file the URDF uses, so the simulated robot always matches the printed one.
 
 Usage:
-    python3 generate_parts.py              # writes hardware/stl/*.stl
-    python3 generate_parts.py --check      # also verifies every mesh is watertight
+    python3 generate_parts.py                  # both robots
+    python3 generate_parts.py --robot rover4   # only the 4WD Ackermann robot
+    python3 generate_parts.py --check          # also verifies every mesh is watertight
 
 Outputs (millimetres, already in print orientation, flat side down):
-    stl/*.stl                               -> slice and print these
+    stl/*.stl                               -> rover (2WD) parts: slice and print these
+    stl/rover4/*.stl                        -> rover4 (4WD Ackermann) parts
     ../src/rover_description/meshes          -> copies used as visuals in the simulator
 """
 import argparse
@@ -28,6 +30,7 @@ import yaml
 
 HERE = Path(__file__).resolve().parent
 DIMS_FILE = HERE.parent / 'src/rover_description/config/dimensions.yaml'
+DIMS_FILE_ROVER4 = HERE.parent / 'src/rover_description/config/dimensions_rover4.yaml'
 STL_DIR = HERE / 'stl'
 MESH_DIR = HERE.parent / 'src/rover_description/meshes'
 
@@ -162,6 +165,21 @@ def _bridge(poly, hole, others):
 
 
 def triangulate(outer, holes=()):
+    """Triangulate a polygon with holes. Aligned holes can create degenerate (collinear) bridges
+    that stall ear clipping; in that case retry on a slightly rotated copy and rotate back."""
+    for deg in (0.0, 0.37, 1.13, 2.71):
+        c, s_ = math.cos(math.radians(deg)), math.sin(math.radians(deg))
+        rot = lambda poly: [(x * c - y * s_, x * s_ + y * c) for x, y in poly]
+        try:
+            pts, tris = _triangulate(rot(outer), [rot(h) for h in holes])
+        except RuntimeError:
+            continue
+        back = np.column_stack([pts[:, 0] * c + pts[:, 1] * s_, -pts[:, 0] * s_ + pts[:, 1] * c])
+        return back, tris
+    raise RuntimeError('triangulation failed')
+
+
+def _triangulate(outer, holes=()):
     outer = list(outer) if _area(outer) > 0 else list(reversed(outer))
     holes = [list(h) if _area(h) < 0 else list(reversed(h)) for h in holes]
     poly = outer
@@ -418,28 +436,324 @@ PARTS = {
 }
 
 
-def main():
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument('--check', action='store_true', help='verify meshes are closed')
-    args = ap.parse_args()
+# ---------------------------------------------------------------------------
+# Rover4: 4WD + front (Ackermann) steering
+#
+# Parts are modelled in the robot's own frames (millimetres):
+#   base_link  = rear-axle centre, z relative to the axle   (plates, beam, mounts)
+#   steering   = kingpin axis of the left front knuckle      (knuckles)
+#   wheel      = wheel centre, axle along y                  (hubs, tires)
+# so the same geometry is used as an exact visual mesh in the simulator; for printing
+# each part is rotated onto its flat face and moved onto the bed.
+# ---------------------------------------------------------------------------
+RX_PI = np.diag([1.0, -1.0, -1.0])                       # 180 deg about x (flip upside down)
+MIRROR_Y = np.diag([1.0, -1.0, 1.0])                     # left <-> right
+WHEEL_Z_TO_Y = np.array([[1, 0, 0], [0, 0, -1], [0, 1, 0]], dtype=float)  # axis z -> -y
 
+
+def convex_hull(points):
+    pts = sorted(set(points))
+    if len(pts) < 3:
+        return pts
+
+    def cross(o, a, b):
+        return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
+    lower, upper = [], []
+    for p in pts:
+        while len(lower) >= 2 and cross(lower[-2], lower[-1], p) <= 0:
+            lower.pop()
+        lower.append(p)
+    for p in reversed(pts):
+        while len(upper) >= 2 and cross(upper[-2], upper[-1], p) <= 0:
+            upper.pop()
+        upper.append(p)
+    return lower[:-1] + upper[:-1]
+
+
+def arc(cx, cy, r, a0_deg, a1_deg, n=8):
+    return [(cx + r * math.cos(math.radians(a0_deg + (a1_deg - a0_deg) * i / n)),
+             cy + r * math.sin(math.radians(a0_deg + (a1_deg - a0_deg) * i / n))) for i in range(n + 1)]
+
+
+def for_print(mesh, rotation=np.eye(3)):
+    """Rotate a part onto its flat face and put it on the bed, centred at x = y = 0."""
+    m = transform(mesh, rotation)
+    pts = np.concatenate(m)
+    lo, hi = pts.min(0), pts.max(0)
+    return transform(m, np.eye(3), (-(lo[0] + hi[0]) / 2, -(lo[1] + hi[1]) / 2, -lo[2]))
+
+
+class Rover4:
+    def __init__(self, dims):
+        mm = lambda v: v * 1000.0
+        c, w, a, st, mo, li, cam = (dims['chassis'], dims['wheel'], dims['axles'], dims['steering'],
+                                    dims['motor'], dims['lidar'], dims['camera'])
+        self.rear_x, self.front_x = mm(c['rear_x']), mm(c['front_x'])
+        self.W, self.front_W = mm(c['width']), mm(c['front_width'])
+        self.narrow_x, self.split_x = mm(c['narrow_from_x']), mm(c['split_x'])
+        self.t, self.r_corner = mm(c['plate_thickness']), mm(c['corner_radius'])
+        self.deck = mm(c['deck_spacing'])
+        self.top_L, self.top_W, self.top_x = mm(c['top_length']), mm(c['top_width']), mm(c['top_x'])
+        self.wheel_r, self.wheel_w = mm(w['radius']), mm(w['width'])
+        self.tire_t = mm(w['tire_thickness'])
+        self.shaft_d, self.shaft_flat = mm(w['shaft_diameter']), mm(w['shaft_flat'])
+        self.wheelbase, self.track = mm(a['wheelbase']), mm(a['track'])
+        self.kingpin_y, self.arm_len = mm(st['kingpin_y']), mm(st['arm_length'])
+        self.servo_x, self.horn = mm(st['servo_x']), mm(st['horn_length'])
+        self.motor_w, self.motor_h, self.motor_len = mm(mo['width']), mm(mo['height']), mm(mo['length'])
+        self.lidar_x, self.lidar_size = mm(li['x']), mm(li['size'])
+        self.lidar_riser_h, self.lidar_holes = mm(li['riser_height']), mm(li['mount_hole_spacing'])
+        self.cam_x, self.cam_riser_h = mm(cam['x']), mm(cam['riser_height'])
+        # heights relative to the axle
+        self.z_low_bot = mm(c['lower_plate_z']) - self.wheel_r
+        self.z_low_top = self.z_low_bot + self.t
+        self.z_up_bot = self.z_low_top + self.deck
+        self.z_up_top = self.z_up_bot + self.t
+        self.beam_t = 6.0
+        self.z_beam_bot = self.z_low_bot - self.beam_t
+        self.tab_t = 5.0
+        self.wheel_offset = self.track / 2 - self.kingpin_y       # kingpin -> wheel centre (y)
+        # Ackermann arm: points from the kingpin towards the rear-axle centre
+        ang = math.atan2(-self.kingpin_y, -self.wheelbase)
+        self.arm_end = (self.arm_len * math.cos(ang), self.arm_len * math.sin(ang))
+        # upper deck supports: rear corners, beside the battery, and either side of the servo
+        self.standoffs = [(x, sy * y) for x, y in ((12.0, 63.0), (112.0, 66.0), (185.0, 30.0))
+                          for sy in (1, -1)]
+
+    # ---- lower deck -------------------------------------------------------
+    def _deck_holes(self):
+        h = [circle(x, y, M3 / 2) for x, y in self.standoffs]
+        h += [circle(x, y, M3 / 2) for x in (80.0, 120.0) for y in (-45.0, 0.0, 45.0)]      # splice
+        h += [circle(sx * 19.0, sy * 68.0, M3 / 2) for sx in (1, -1) for sy in (1, -1)]      # rear clamps
+        h += [circle(40.0 + sx * 29.0, sy * 24.5, M25 / 2) for sx in (1, -1) for sy in (1, -1)]  # Pi 5
+        h += [slot(25.0, sy * 50.0, 16.0, 8.0) for sy in (1, -1)]                            # cables
+        h += [slot(114.0, sy * 58.0, 24.0, 4.0) for sy in (1, -1)]                           # battery strap
+        h += [rect(self.servo_x - 10.0, 0.0, 42.0, 21.0)]                                    # servo body
+        h += [circle(self.servo_x - 10.0 + sx * 27.0, sy * 12.0, M3 / 2) for sx in (1, -1) for sy in (1, -1)]
+        h += [circle(self.wheelbase, sy * 30.0, M3 / 2) for sy in (1, -1)]                   # front beam
+        h += [circle(self.cam_x, sy * 25.0, M3 / 2) for sy in (1, -1)] + [circle(self.cam_x, 0.0, QUARTER / 2)]
+        return h
+
+    def _deck_outline(self, x0, x1):
+        """Outline of the lower deck between x0 and x1 (the seam edges are square)."""
+        W2, F2, r = self.W / 2, self.front_W / 2, self.r_corner
+        ramp = 30.0                                            # 45 deg transition to the nose
+        pts = []
+        # right side, rear -> front
+        if x0 <= self.rear_x + 1e-6:
+            pts += arc(self.rear_x + r, -W2 + r, r, 180, 270)
+        else:
+            pts.append((x0, -W2))
+        if x1 >= self.front_x - 1e-6:
+            pts += [(self.narrow_x - ramp, -W2), (self.narrow_x, -F2)]
+            pts += arc(self.front_x - r, -F2 + r, r, 270, 360)
+            pts += arc(self.front_x - r, F2 - r, r, 0, 90)
+            pts += [(self.narrow_x, F2), (self.narrow_x - ramp, W2)]
+        else:
+            pts += [(x1, -W2), (x1, W2)]
+        if x0 <= self.rear_x + 1e-6:
+            pts += arc(self.rear_x + r, W2 - r, r, 90, 180)
+        else:
+            pts.append((x0, W2))
+        if x0 > self.rear_x + 1e-6 and x1 < self.front_x:
+            pass
+        return pts
+
+    def _deck_half(self, x0, x1):
+        holes = [h for h in self._deck_holes() if all(x0 + 2 < p[0] < x1 - 2 for p in h)]
+        return extrude(self._deck_outline(x0, x1), holes, self.z_low_bot, self.z_low_top)
+
+    def base_rear(self):
+        return self._deck_half(self.rear_x, self.split_x)
+
+    def base_front(self):
+        return self._deck_half(self.split_x, self.front_x)
+
+    def splice_plate(self):
+        holes = [circle(x, y, M3 / 2) for x in (80.0, 120.0) for y in (-45.0, 0.0, 45.0)]
+        return extrude(rounded_rect(self.split_x, 0, 60.0, 120.0, 6.0), holes,
+                       self.z_low_bot - 5.0, self.z_low_bot)
+
+    # ---- upper deck -------------------------------------------------------
+    def top_plate(self):
+        lx = self.lidar_x
+        holes = [circle(x, y, M3 / 2) for x, y in self.standoffs]
+        holes += [circle(lx + sx * 36.0, sy * 36.0, M3 / 2) for sx in (1, -1) for sy in (1, -1)]
+        holes += [circle(lx, 0.0, 12.0)]
+        for x in (20.0, 40.0, 160.0, 180.0):
+            for y in (-40.0, -20.0, 0.0, 20.0, 40.0):
+                if all(math.hypot(x - sx, y - sy) > 8 for sx, sy in self.standoffs):
+                    holes.append(circle(x, y, M3 / 2))
+        outer = rounded_rect(self.top_x, 0, self.top_L, self.top_W, self.r_corner)
+        return extrude(outer, holes, self.z_up_bot, self.z_up_top)
+
+    # ---- drive & steering -------------------------------------------------
+    def rear_motor_clamp(self):
+        """Left rear N20 clamp (the right one is the same part turned around)."""
+        y0, y1 = 58.0, 82.0
+        prof = rect(0.0, (self.z_low_bot - 8.0) / 2 - 4.0 + 4.0, 26.0, self.z_low_bot + 8.0)
+        prof = [(x, min(z, self.z_low_bot)) for x, z in prof]
+        pocket = rect(0.0, 0.0, self.motor_w + 0.3, self.motor_h + 0.3)
+        body = transform(extrude(prof, [pocket], y0, y1), XZ_PROFILE)
+        ears = extrude(rect(0.0, 70.0, 48.0, 24.0), [circle(sx * 19.0, 68.0, M3 / 2) for sx in (1, -1)],
+                       self.z_low_bot - 5.0, self.z_low_bot)
+        return body + ears
+
+    def front_beam(self):
+        k = self.kingpin_y
+        outer = convex_hull(circle(self.wheelbase, k, 8.0, 24) + circle(self.wheelbase, -k, 8.0, 24))
+        holes = [circle(self.wheelbase, sy * k, 2.1) for sy in (1, -1)]                     # M4 kingpins
+        holes += [circle(self.wheelbase, sy * 30.0, M3 / 2) for sy in (1, -1)]
+        return extrude(outer, holes, self.z_beam_bot, self.z_low_bot)
+
+    def knuckle_left(self):
+        """Left front knuckle in its steering frame (origin on the kingpin axis)."""
+        ax, ay = self.arm_end
+        z_top = self.z_beam_bot
+        z_tab = z_top - self.tab_t
+        tab = convex_hull(circle(0, 0, 8.0, 24) + circle(ax, ay, 5.0, 16) + rect(0.0, 5.0, 24.0, 10.0))
+        mesh = extrude(tab, [circle(0, 0, 2.1), circle(ax, ay, M3 / 2)], z_tab, z_top)
+        wall = [(x, z) for x, z in rect(0.0, (z_top - 8.0) / 2 - 4.0 + 4.0, 24.0, z_top + 8.0)]
+        wall = [(x, min(max(z, -8.0), z_top)) for x, z in wall]
+        pocket = rect(0.0, 0.0, self.motor_w + 0.3, self.motor_h + 0.3)
+        mesh += transform(extrude(wall, [pocket], 0.0, 10.0), XZ_PROFILE)
+        return mesh
+
+    def knuckle_right(self):
+        return transform(self.knuckle_left(), MIRROR_Y)
+
+    def tie_rod(self):
+        ax, ay = self.arm_end
+        pin = (self.servo_x - self.horn, 0.0)
+        end = (self.wheelbase + ax, self.kingpin_y + ay)
+        length = math.hypot(end[0] - pin[0], end[1] - pin[1])
+        return extrude(slot(0, 0, length + 8.0, 8.0),
+                       [circle(-length / 2, 0, M3 / 2), circle(length / 2, 0, M3 / 2)], 0, 4.0)
+
+    def servo_mount(self):
+        cx = self.servo_x - 10.0
+        holes = [rect(cx, 0, 41.0, 20.5)]
+        holes += [circle(cx + sx * 24.75, sy * 5.0, 2.1) for sx in (1, -1) for sy in (1, -1)]   # servo ears
+        holes += [circle(cx + sx * 27.0, sy * 12.0, M3 / 2) for sx in (1, -1) for sy in (1, -1)]
+        return extrude(rounded_rect(cx, 0, 62.0, 32.0, 4.0), holes, self.z_low_top, self.z_low_top + 12.0)
+
+    # ---- wheels -----------------------------------------------------------
+    def _hub_z(self):
+        r_rim = self.wheel_r - self.tire_t
+        d_hole = d_shape(0, 0, self.shaft_d + 0.2, self.shaft_flat)
+        spokes = [circle(22.0 * math.cos(a), 22.0 * math.sin(a), 7.0)
+                  for a in np.linspace(0, 2 * math.pi, 6, endpoint=False)]
+        mesh = extrude(circle(0, 0, r_rim - 0.01, 96), [circle(0, 0, r_rim - 3.0, 96)], 0, self.wheel_w)
+        mesh += extrude(circle(0, 0, r_rim - 2.5, 96), spokes + [circle(0, 0, 6.5, 40)], 0, 4.0)
+        mesh += extrude(circle(0, 0, 7.0, 40), [d_hole], 0, self.wheel_w)
+        return mesh
+
+    def _tire_z(self):
+        r_rim = self.wheel_r - self.tire_t
+        return extrude(circle(0, 0, self.wheel_r, 120), [circle(0, 0, r_rim - 0.2, 120)], 0, self.wheel_w)
+
+    def wheel_hub(self):     # wheel frame: axle along y, outer face at +y
+        return transform(self._hub_z(), WHEEL_Z_TO_Y, (0, self.wheel_w / 2, 0))
+
+    def tire_tpu(self):
+        return transform(self._tire_z(), WHEEL_Z_TO_Y, (0, self.wheel_w / 2, 0))
+
+    # ---- sensor mounts ----------------------------------------------------
+    def lidar_riser(self):
+        s = self.lidar_size + 8.0
+        lx, hs = self.lidar_x, self.lidar_holes / 2
+        holes = [circle(lx + sx * 36.0, sy * 36.0, M3 / 2) for sx in (1, -1) for sy in (1, -1)]
+        holes += [circle(lx + sx * hs, sy * hs, M25 / 2) for sx in (1, -1) for sy in (1, -1)]
+        holes += [circle(lx, 0, 12.0)]
+        return extrude(rounded_rect(lx, 0, s, s, 8.0), holes, self.z_up_top, self.z_up_top + self.lidar_riser_h)
+
+    def camera_riser(self):
+        holes = [circle(self.cam_x, sy * 25.0, M3 / 2) for sy in (1, -1)] + [circle(self.cam_x, 0, QUARTER / 2)]
+        return extrude(rounded_rect(self.cam_x, 0, 20.0, 64.0, 4.0), holes,
+                       self.z_low_top, self.z_low_top + self.cam_riser_h)
+
+    def standoff(self):
+        return extrude(circle(0, 0, 3.5, 24), [circle(0, 0, 1.6, 16)], 0, self.deck)
+
+
+# name: (quantity, material, note, print rotation, used as sim visual)
+PARTS_ROVER4 = {
+    'base_rear': (1, 'PETG', 'lower deck, rear half', np.eye(3), True),
+    'base_front': (1, 'PETG', 'lower deck, front half (steering nose)', np.eye(3), True),
+    'splice_plate': (1, 'PETG', 'joins the two deck halves from below', np.eye(3), True),
+    'top_plate': (1, 'PETG/PLA', 'upper deck, lidar + electronics', np.eye(3), True),
+    'front_beam': (1, 'PETG', 'front axle beam, M4 kingpins; 50 % infill', np.eye(3), True),
+    'knuckle_left': (1, 'PETG', 'steering knuckle + N20 clamp; 5 perimeters', RX_PI, True),
+    'knuckle_right': (1, 'PETG', 'mirror of the left knuckle', RX_PI, True),
+    'rear_motor_clamp': (2, 'PETG', 'N20 clamp under the rear deck', RX_PI, True),
+    'servo_mount': (1, 'PETG', 'MG996R frame, shaft points down through the deck', np.eye(3), True),
+    'tie_rod': (2, 'PETG', 'servo horn -> knuckle arm, M3 shoulder screws', np.eye(3), False),
+    'wheel_hub': (4, 'PETG', 'outer face down; 3 mm D-shaft press fit', None, True),
+    'tire_tpu': (4, 'TPU 95A', 'stretch over the hub rim', None, True),
+    'lidar_riser': (1, 'PETG/PLA', 'RPLIDAR S2M1: verify its hole pattern', np.eye(3), True),
+    'camera_riser': (1, 'PETG/PLA', 'RealSense D435i, 1/4"-20 from below', np.eye(3), True),
+    'standoff': (6, 'PETG/PLA', 'or M3 x 60 mm brass standoffs', np.eye(3), False),
+}
+
+
+def build_rover4(check):
+    dims = yaml.safe_load(DIMS_FILE_ROVER4.read_text())
+    r4 = Rover4(dims)
+    out = STL_DIR / 'rover4'
+    out.mkdir(parents=True, exist_ok=True)
+    ok = True
+    print(f'Generating rover4 parts from {DIMS_FILE_ROVER4}')
+    for name, (qty, material, note, rot, visual) in PARTS_ROVER4.items():
+        mesh = getattr(r4, name)()
+        if name == 'wheel_hub':
+            printable = for_print(r4._hub_z())
+        elif name == 'tire_tpu':
+            printable = for_print(r4._tire_z())
+        else:
+            printable = for_print(mesh, rot)
+        write_stl(out / f'{name}.stl', printable, f'rover4 {name}')
+        if visual:
+            write_stl(MESH_DIR / f'rover4_{name}.stl', mesh, f'rover4 {name} (assembly frame)')
+        if check:
+            ok &= check_mesh(printable, name)
+        else:
+            print(f'  {name:17s} x{qty}  {material:9s} {note}')
+    print(f'STL files written to {out}')
+    return ok
+
+
+def build_rover(check):
     dims = yaml.safe_load(DIMS_FILE.read_text())
     rover = Rover(dims)
     STL_DIR.mkdir(exist_ok=True)
-    MESH_DIR.mkdir(exist_ok=True)
     ok = True
-    print(f'Generating parts from {DIMS_FILE}')
+    print(f'Generating rover parts from {DIMS_FILE}')
     for name, (qty, material, note) in PARTS.items():
         mesh = getattr(rover, name)()
         path = STL_DIR / f'{name}.stl'
         write_stl(path, mesh, name)
         if name in VISUAL_PARTS:
             shutil.copy(path, MESH_DIR / path.name)
-        if args.check:
+        if check:
             ok &= check_mesh(mesh, name)
         else:
             print(f'  {name:15s} x{qty}  {material:9s} {note}')
     print(f'STL files written to {STL_DIR}')
+    return ok
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument('--check', action='store_true', help='verify meshes are closed')
+    ap.add_argument('--robot', choices=['rover', 'rover4', 'all'], default='all',
+                    help='which robot to generate (default: all)')
+    args = ap.parse_args()
+    MESH_DIR.mkdir(exist_ok=True)
+    ok = True
+    if args.robot in ('rover', 'all'):
+        ok &= build_rover(args.check)
+    if args.robot in ('rover4', 'all'):
+        ok &= build_rover4(args.check)
     return 0 if ok else 1
 
 

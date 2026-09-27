@@ -57,3 +57,21 @@ def test_teleop_ramp():
     assert TeleopKeyboard.ramp(0.0, 0.3, 0.05) == 0.05
     assert TeleopKeyboard.ramp(0.28, 0.3, 0.05) == 0.3
     assert TeleopKeyboard.ramp(0.3, 0.0, 0.05) == 0.0     # stop at once
+
+
+def test_teleop_ackermann_turn_keys_roll_forward():
+    rclpy.init()
+    try:
+        node = TeleopKeyboard()
+        node.ackermann = True
+        node.mode = 'MANUAL'
+        node.handle_key('a')
+        assert node.target == (1, 1)          # steer left while driving forwards
+        node.handle_key('d')
+        assert node.target == (1, -1)
+        node.ackermann = False
+        node.handle_key('a')
+        assert node.target == (0, 1)          # diff drive: rotate in place
+        node.destroy_node()
+    finally:
+        rclpy.shutdown()

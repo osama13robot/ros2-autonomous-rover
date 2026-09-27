@@ -1,5 +1,8 @@
 # 11 · Building the real robot
 
+> This guide uses the 2WD **rover**; for **rover4** add `robot:=rover4` to the launch commands and see
+> [14 Rover4](14_rover4_ackermann.md#real-robot-firmware-for-ackermann) for the steering firmware.
+
 > **Status:** the mechanical design and the autonomy stack are complete and tested *in simulation*.
 > The hardware bring-up described here is a **plan and a template**: the driver launch file has not
 > been run on physical hardware yet. Contributions from people who build it are very welcome.

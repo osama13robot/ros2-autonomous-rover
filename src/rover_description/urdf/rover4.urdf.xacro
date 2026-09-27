@@ -1,0 +1,266 @@
+<?xml version="1.0"?>
+<!--
+  Rover4: 4WD car-like robot with front-wheel (Ackermann) steering.
+
+  Frames (REP-105 / REP-103):
+    base_footprint                  on the ground under the REAR axle centre
+    base_link                       rear axle centre (bicycle-model reference point)
+    rear_left/right_wheel_link      driven wheels (continuous joints)
+    front_left/right_steering_link  steering knuckles (revolute about z, on the kingpins)
+    front_left/right_wheel_link     driven + steered wheels
+    lidar_link                      RPLIDAR S2M1 scan plane
+    camera_link                     RealSense D435i body (x forward)
+    camera_optical_link             D435i optical frame (z forward)
+    imu_link                        D435i built-in IMU (BMI055)
+
+  All dimensions come from config/dimensions_rover4.yaml (shared with the STL generator).
+  Visual meshes are generated in these link frames, so they need no offsets.
+-->
+<robot name="rover4" xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <xacro:arg name="sim_gazebo" default="true"/>
+  <xacro:arg name="use_meshes" default="true"/>   <!-- accepted for compatibility; rover4 always uses meshes -->
+
+  <xacro:include filename="$(find rover_description)/urdf/inertial_macros.xacro"/>
+  <xacro:include filename="$(find rover_description)/urdf/materials.xacro"/>
+
+  <xacro:property name="d" value="${xacro.load_yaml('$(find rover_description)/config/dimensions_rover4.yaml')}"/>
+  <xacro:property name="mesh" value="package://rover_description/meshes/rover4_"/>
+  <xacro:property name="mm" value="0.001 0.001 0.001"/>
+
+  <!-- ===== derived dimensions ===== -->
+  <xacro:property name="c" value="${d['chassis']}"/>
+  <xacro:property name="R" value="${d['wheel']['radius']}"/>
+  <xacro:property name="WW" value="${d['wheel']['width']}"/>
+  <xacro:property name="L" value="${d['axles']['wheelbase']}"/>
+  <xacro:property name="track" value="${d['axles']['track']}"/>
+  <xacro:property name="kingpin_y" value="${d['steering']['kingpin_y']}"/>
+  <xacro:property name="steer_limit" value="${d['steering']['limit']}"/>
+  <xacro:property name="T" value="${c['plate_thickness']}"/>
+  <xacro:property name="z_low_bot" value="${c['lower_plate_z'] - R}"/>
+  <xacro:property name="z_low_top" value="${z_low_bot + T}"/>
+  <xacro:property name="z_up_bot" value="${z_low_top + c['deck_spacing']}"/>
+  <xacro:property name="z_up_top" value="${z_up_bot + T}"/>
+  <xacro:property name="mo" value="${d['motor']}"/>
+  <xacro:property name="lidar" value="${d['lidar']}"/>
+  <xacro:property name="cam" value="${d['camera']}"/>
+
+  <xacro:macro name="mesh_visual" params="name material rpy:='0 0 0'">
+    <visual>
+      <origin xyz="0 0 0" rpy="${rpy}"/>
+      <geometry><mesh filename="${mesh}${name}.stl" scale="${mm}"/></geometry>
+      <material name="${material}"/>
+    </visual>
+  </xacro:macro>
+
+  <!-- ================= base ================= -->
+  <link name="base_footprint"/>
+
+  <joint name="base_joint" type="fixed">
+    <parent link="base_footprint"/>
+    <child link="base_link"/>
+    <origin xyz="0 0 ${R}"/>
+  </joint>
+
+  <link name="base_link">
+    <xacro:mesh_visual name="base_rear" material="printed_orange"/>
+    <xacro:mesh_visual name="base_front" material="printed_orange"/>
+    <xacro:mesh_visual name="splice_plate" material="printed_grey"/>
+    <xacro:mesh_visual name="top_plate" material="printed_orange"/>
+    <xacro:mesh_visual name="front_beam" material="printed_grey"/>
+    <xacro:mesh_visual name="servo_mount" material="printed_grey"/>
+    <xacro:mesh_visual name="lidar_riser" material="printed_grey"/>
+    <xacro:mesh_visual name="camera_riser" material="printed_grey"/>
+    <xacro:mesh_visual name="rear_motor_clamp" material="printed_grey"/>
+    <xacro:mesh_visual name="rear_motor_clamp" material="printed_grey" rpy="0 0 ${pi}"/>
+
+    <!-- rear N20 motors -->
+    <xacro:macro name="rear_motor" params="side">
+      <visual>
+        <origin xyz="0 ${side*(track/2 - WW/2 - 0.004 - mo['length']/2)} 0"/>
+        <geometry><box size="${mo['width']} ${mo['length']} ${mo['height']}"/></geometry>
+        <material name="metal"/>
+      </visual>
+    </xacro:macro>
+    <xacro:rear_motor side="1"/>
+    <xacro:rear_motor side="-1"/>
+
+    <!-- standoffs -->
+    <xacro:macro name="standoff" params="x y">
+      <visual>
+        <origin xyz="${x} ${y} ${z_low_top + c['deck_spacing']/2}"/>
+        <geometry><cylinder radius="0.0035" length="${c['deck_spacing']}"/></geometry>
+        <material name="brass"/>
+      </visual>
+    </xacro:macro>
+    <xacro:standoff x="0.012" y="0.063"/>
+    <xacro:standoff x="0.012" y="-0.063"/>
+    <xacro:standoff x="0.112" y="0.066"/>
+    <xacro:standoff x="0.112" y="-0.066"/>
+    <xacro:standoff x="0.185" y="0.030"/>
+    <xacro:standoff x="0.185" y="-0.030"/>
+
+    <!-- between the decks: Raspberry Pi 5, 3S battery, steering servo (MG996R) -->
+    <visual>
+      <origin xyz="0.040 0 ${z_low_top + 0.012}"/>
+      <geometry><box size="0.085 0.056 0.018"/></geometry>
+      <material name="pcb_green"/>
+    </visual>
+    <visual>
+      <origin xyz="0.122 0 ${z_low_top + 0.0125}"/>
+      <geometry><box size="0.034 0.105 0.025"/></geometry>
+      <material name="battery_blue"/>
+    </visual>
+    <visual>
+      <origin xyz="${d['steering']['servo_x'] - 0.010} 0 ${z_low_bot - 0.007 + 0.0429/2}"/>
+      <geometry><box size="0.0407 0.0197 0.0429"/></geometry>
+      <material name="dark"/>
+    </visual>
+
+    <!-- one collision box for the body (both decks) -->
+    <collision>
+      <origin xyz="${(c['rear_x'] + c['front_x'])/2} 0 ${(z_low_bot + z_up_top)/2}"/>
+      <geometry><box size="${c['front_x'] - c['rear_x']} ${c['width']} ${z_up_top - z_low_bot}"/></geometry>
+    </collision>
+
+    <xacro:box_inertia m="${c['mass_lower'] + c['mass_upper'] + 2*mo['mass']}"
+                       x="${c['front_x'] - c['rear_x']}" y="${c['width']}" z="${z_up_top - z_low_bot}">
+      <origin xyz="${(c['rear_x'] + c['front_x'])/2 - 0.02} 0 ${z_low_top + 0.015}"/>
+    </xacro:box_inertia>
+  </link>
+
+  <!-- ================= wheels ================= -->
+  <xacro:macro name="wheel_link" params="name side">
+    <link name="${name}_wheel_link">
+      <xacro:mesh_visual name="wheel_hub" material="printed_grey" rpy="0 0 ${0 if side > 0 else pi}"/>
+      <xacro:mesh_visual name="tire_tpu" material="rubber" rpy="0 0 ${0 if side > 0 else pi}"/>
+      <collision>
+        <origin rpy="${pi/2} 0 0"/>
+        <geometry><cylinder radius="${R}" length="${WW}"/></geometry>
+      </collision>
+      <xacro:cylinder_inertia m="${d['wheel']['mass']}" r="${R}" h="${WW}">
+        <origin rpy="${pi/2} 0 0"/>
+      </xacro:cylinder_inertia>
+    </link>
+    <gazebo reference="${name}_wheel_link">
+      <mu1>1.0</mu1>
+      <mu2>1.0</mu2>
+      <kp>1e6</kp>
+      <kd>100.0</kd>
+      <minDepth>0.001</minDepth>
+    </gazebo>
+  </xacro:macro>
+
+  <!-- rear: driven only -->
+  <xacro:macro name="rear_wheel" params="prefix side">
+    <xacro:wheel_link name="rear_${prefix}" side="${side}"/>
+    <joint name="rear_${prefix}_wheel_joint" type="continuous">
+      <parent link="base_link"/>
+      <child link="rear_${prefix}_wheel_link"/>
+      <origin xyz="0 ${side*track/2} 0"/>
+      <axis xyz="0 1 0"/>
+      <dynamics damping="0.01"/>
+    </joint>
+  </xacro:macro>
+  <xacro:rear_wheel prefix="left" side="1"/>
+  <xacro:rear_wheel prefix="right" side="-1"/>
+
+  <!-- front: steering knuckle on the kingpin + driven wheel -->
+  <xacro:macro name="front_corner" params="prefix side">
+    <link name="front_${prefix}_steering_link">
+      <xacro:mesh_visual name="knuckle_${prefix}" material="printed_grey"/>
+      <visual>
+        <origin xyz="0 ${side*(0.010 - mo['length']/2)} 0"/>
+        <geometry><box size="${mo['width']} ${mo['length']} ${mo['height']}"/></geometry>
+        <material name="metal"/>
+      </visual>
+      <xacro:box_inertia m="0.05" x="0.03" y="0.03" z="0.02">
+        <origin xyz="0 0 0"/>
+      </xacro:box_inertia>
+    </link>
+    <joint name="front_${prefix}_steering_joint" type="revolute">
+      <parent link="base_link"/>
+      <child link="front_${prefix}_steering_link"/>
+      <origin xyz="${L} ${side*kingpin_y} 0"/>
+      <axis xyz="0 0 1"/>
+      <limit lower="${-steer_limit}" upper="${steer_limit}" effort="5.0" velocity="4.0"/>
+      <dynamics damping="0.05"/>
+    </joint>
+
+    <xacro:wheel_link name="front_${prefix}" side="${side}"/>
+    <joint name="front_${prefix}_wheel_joint" type="continuous">
+      <parent link="front_${prefix}_steering_link"/>
+      <child link="front_${prefix}_wheel_link"/>
+      <origin xyz="0 ${side*(track/2 - kingpin_y)} 0"/>
+      <axis xyz="0 1 0"/>
+      <dynamics damping="0.01"/>
+    </joint>
+  </xacro:macro>
+  <xacro:front_corner prefix="left" side="1"/>
+  <xacro:front_corner prefix="right" side="-1"/>
+
+  <!-- ================= RPLIDAR S2M1 ================= -->
+  <link name="lidar_link">
+    <visual>
+      <origin xyz="0 0 ${-lidar['scan_plane'] + lidar['height']/2}"/>
+      <geometry><box size="${lidar['size']} ${lidar['size']} ${lidar['height']}"/></geometry>
+      <material name="dark"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 ${-lidar['scan_plane'] + lidar['height']/2}"/>
+      <geometry><box size="${lidar['size']} ${lidar['size']} ${lidar['height']}"/></geometry>
+    </collision>
+    <xacro:box_inertia m="${lidar['mass']}" x="${lidar['size']}" y="${lidar['size']}" z="${lidar['height']}">
+      <origin xyz="0 0 ${-lidar['scan_plane'] + lidar['height']/2}"/>
+    </xacro:box_inertia>
+  </link>
+  <joint name="lidar_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="lidar_link"/>
+    <origin xyz="${lidar['x']} 0 ${z_up_top + lidar['riser_height'] + lidar['scan_plane']}"/>
+  </joint>
+
+  <!-- ================= RealSense D435i ================= -->
+  <link name="camera_link">
+    <visual>
+      <geometry><box size="${cam['depth']} ${cam['width']} ${cam['height']}"/></geometry>
+      <material name="metal"/>
+    </visual>
+    <visual>
+      <origin xyz="${cam['depth']/2} 0 0"/>
+      <geometry><box size="0.001 ${cam['width']*0.85} ${cam['height']*0.6}"/></geometry>
+      <material name="dark"/>
+    </visual>
+    <collision>
+      <geometry><box size="${cam['depth']} ${cam['width']} ${cam['height']}"/></geometry>
+    </collision>
+    <xacro:box_inertia m="${cam['mass']}" x="${cam['depth']}" y="${cam['width']}" z="${cam['height']}">
+      <origin xyz="0 0 0"/>
+    </xacro:box_inertia>
+  </link>
+  <joint name="camera_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="camera_link"/>
+    <origin xyz="${cam['x']} 0 ${z_low_top + cam['riser_height'] + cam['height']/2}" rpy="0 ${cam['pitch']} 0"/>
+  </joint>
+
+  <link name="camera_optical_link"/>
+  <joint name="camera_optical_joint" type="fixed">
+    <parent link="camera_link"/>
+    <child link="camera_optical_link"/>
+    <origin rpy="${-pi/2} 0 ${-pi/2}"/>
+  </joint>
+
+  <!-- the D435i's built-in IMU, axes aligned with camera_link -->
+  <link name="imu_link"/>
+  <joint name="imu_joint" type="fixed">
+    <parent link="camera_link"/>
+    <child link="imu_link"/>
+    <origin xyz="-0.006 0.0 0.0"/>
+  </joint>
+
+  <xacro:if value="$(arg sim_gazebo)">
+    <xacro:include filename="$(find rover_description)/urdf/rover4.gazebo.xacro"/>
+  </xacro:if>
+
+</robot>

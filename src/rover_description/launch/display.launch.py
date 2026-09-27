@@ -1,6 +1,7 @@
 """Inspect the robot model in RViz (no simulator): wheels can be turned with the GUI sliders.
 
     ros2 launch rover_description display.launch.py
+    ros2 launch rover_description display.launch.py robot:=rover4    # 4WD Ackermann (steering sliders too)
 """
 import os
 
@@ -15,10 +16,11 @@ from launch_ros.parameter_descriptions import ParameterValue
 def generate_launch_description():
     pkg = get_package_share_directory('rover_description')
     robot_description = ParameterValue(
-        Command(['xacro ', os.path.join(pkg, 'urdf', 'rover.urdf.xacro'),
-                 ' sim_gazebo:=false use_meshes:=', LaunchConfiguration('use_meshes')]),
+        Command(['xacro ', os.path.join(pkg, 'urdf', ''), LaunchConfiguration('robot'),
+                 '.urdf.xacro sim_gazebo:=false use_meshes:=', LaunchConfiguration('use_meshes')]),
         value_type=str)
     return LaunchDescription([
+        DeclareLaunchArgument('robot', default_value='rover', choices=['rover', 'rover4']),
         DeclareLaunchArgument('use_meshes', default_value='true',
                               description='Show the 3D-printed STL parts (false: simple shapes)'),
         Node(package='robot_state_publisher', executable='robot_state_publisher',

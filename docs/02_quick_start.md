@@ -22,6 +22,7 @@ Useful variations (any `name:=value` is passed to the launch file):
 ./scripts/start_sim.sh headless:=true          # no Gazebo window (much faster), RViz only
 ./scripts/start_sim.sh initial_mode:=auto      # start exploring immediately
 ./scripts/start_sim.sh world:=empty.sdf        # flat empty world
+./scripts/start_sim.sh robot:=rover4           # the 4WD car-like robot (keyboard in car mode)
 ```
 
 ## What you see
@@ -113,6 +114,7 @@ ros2 topic echo /explore/status
 
 | Argument | Default | Meaning |
 |---|---|---|
+| `robot` | `rover` | `rover` (2WD, turns in place) or `rover4` (4WD Ackermann, see [14](14_rover4_ackermann.md)) |
 | `world` | `rover_world.sdf` | a world file from `rover_gazebo/worlds` |
 | `headless` | `false` | run Gazebo without its GUI |
 | `x`, `y`, `yaw` | `0.0` | spawn pose |

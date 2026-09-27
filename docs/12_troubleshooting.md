@@ -33,6 +33,8 @@
 | `Failed to make progress` then spins or backs up | recoveries at work; normal occasionally. Often, the goal is in a narrow gap |
 | The explorer leaves grey patches | areas it cannot see into (behind furniture) are skipped on purpose; see [09](09_autonomous_exploration.md) |
 | AMCL: the robot is in the wrong place on the map | use *2D Pose Estimate* in RViz to give the right start pose |
+| `ros2 action send_goal` prints nothing, and the log says `Failed to send goal response … (timeout)` | a start-up race between a brand-new command-line client and the action server; just send the goal again |
+| rover4 hesitates or reverses near walls and doorways | normal for a car-like robot: it needs room to turn (radius ≈ 0.4 m) and makes multi-point turns |
 
 ## Useful diagnostic commands
 

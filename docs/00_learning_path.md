@@ -10,7 +10,8 @@ then you understand how it works, then you change it.
 | **New to ROS 2** (you know some Python and Linux) | [01 Installation](01_installation.md) → [02 Quick start](02_quick_start.md) | Labs 1–3, then guides 03 and 04 |
 | **Familiar with ROS 2 basics** (nodes, topics, launch) | [02 Quick start](02_quick_start.md) → [03 Architecture](03_architecture.md) | Guides 06–09, then labs 4–7 |
 | **Experienced with ROS / Nav2** | [03 Architecture](03_architecture.md) | [13 Future possibilities](13_future_possibilities.md): pick a project |
-| **A maker who wants to build it** | [Hardware guide](../hardware/README.md) | [11 Real robot](11_real_robot.md) |
+| **A maker who wants to build it** | [Hardware guide](../hardware/README.md) | [11 Real robot](11_real_robot.md), [14 Rover4](14_rover4_ackermann.md) |
+| **Curious about car-like robots** | [14 Rover4: 4WD Ackermann](14_rover4_ackermann.md) | compare with guides 07 and 09 |
 | **A teacher** | This page + [10 Hands-on labs](10_hands_on_labs.md) | Each lab is one class session (45–90 min) |
 
 ## Prerequisites

@@ -1,6 +1,7 @@
 """Bring up the REAL rover (run on the robot's Raspberry Pi).
 
     ros2 launch rover_bringup robot.launch.py lidar:=true camera:=true rviz:=false
+    ros2 launch rover_bringup robot.launch.py robot:=rover4 lidar:=true camera:=true   # 4WD Ackermann
 
 The same autonomy stack as in simulation is used. The hardware drivers must provide the
 same topics the simulator provides (see docs/11_real_robot.md):
@@ -26,7 +27,7 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import Command, LaunchConfiguration
+from launch.substitutions import Command, LaunchConfiguration, PythonExpression
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 
@@ -35,11 +36,15 @@ def generate_launch_description():
     description_pkg = get_package_share_directory('rover_description')
     bringup_pkg = get_package_share_directory('rover_bringup')
 
+    robot = LaunchConfiguration('robot')
+    is_rover4 = ["'", robot, "' == 'rover4'"]
     robot_description = ParameterValue(
-        Command(['xacro ', os.path.join(description_pkg, 'urdf', 'rover.urdf.xacro'), ' sim_gazebo:=false']),
+        Command(['xacro ', os.path.join(description_pkg, 'urdf', ''), robot, '.urdf.xacro sim_gazebo:=false']),
         value_type=str)
 
     args = [
+        DeclareLaunchArgument('robot', default_value='rover', choices=['rover', 'rover4'],
+                              description='rover = 2WD (RPLIDAR C1, D435), rover4 = 4WD Ackermann (S2M1, D435i)'),
         DeclareLaunchArgument('lidar', default_value='false', description='Start the RPLIDAR driver'),
         DeclareLaunchArgument('lidar_port', default_value='/dev/ttyUSB0'),
         DeclareLaunchArgument('camera', default_value='false', description='Start the RealSense driver'),
@@ -56,26 +61,34 @@ def generate_launch_description():
 
     lidar = Node(
         package='sllidar_ros2', executable='sllidar_node', name='lidar', output='screen',
-        parameters=[{'serial_port': LaunchConfiguration('lidar_port'), 'serial_baudrate': 460800,
-                     'frame_id': 'lidar_link', 'angle_compensate': True, 'scan_mode': 'Standard'}],
+        # RPLIDAR C1: 460800 baud; RPLIDAR S2M1 (rover4): 1000000 baud
+        parameters=[{'serial_port': LaunchConfiguration('lidar_port'),
+                     'serial_baudrate': ParameterValue(PythonExpression(
+                         ['1000000 if '] + is_rover4 + [' else 460800']), value_type=int),
+                     'frame_id': 'lidar_link', 'angle_compensate': True}],
         condition=IfCondition(LaunchConfiguration('lidar')))
 
     # RealSense: its own TF is disabled, the URDF already places camera_link.
+    # rover4 (D435i) also uses the camera's built-in IMU as the robot IMU (-> /imu/data).
     camera = Node(
         package='realsense2_camera', executable='realsense2_camera_node', name='camera',
         namespace='camera', output='screen',
         parameters=[{'publish_tf': False, 'base_frame_id': 'camera_link',
                      'pointcloud.enable': True, 'align_depth.enable': True,
                      'depth_module.depth_profile': '424x240x15', 'rgb_camera.color_profile': '424x240x15',
-                     'decimation_filter.enable': True}],
-        remappings=[('depth/color/points', '/camera/depth/points')],
+                     'decimation_filter.enable': True,
+                     'enable_gyro': ParameterValue(PythonExpression(is_rover4), value_type=bool),
+                     'enable_accel': ParameterValue(PythonExpression(is_rover4), value_type=bool),
+                     'unite_imu_method': 2,
+                     'angular_velocity_cov': 0.0004, 'linear_accel_cov': 0.04}],
+        remappings=[('depth/color/points', '/camera/depth/points'), ('imu', '/imu/data')],
         condition=IfCondition(LaunchConfiguration('camera')))
 
     autonomy = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(os.path.join(bringup_pkg, 'launch', 'autonomy.launch.py')),
         launch_arguments={
             'use_sim_time': 'false',
-            **{k: LaunchConfiguration(k) for k in ('slam', 'map', 'explore', 'initial_mode', 'rviz')},
+            **{k: LaunchConfiguration(k) for k in ('robot', 'slam', 'map', 'explore', 'initial_mode', 'rviz')},
         }.items())
 
     return LaunchDescription(args + [robot_state_publisher, lidar, camera, autonomy])

@@ -2,6 +2,7 @@
 
     ros2 launch rover_gazebo sim.launch.py
     ros2 launch rover_gazebo sim.launch.py world:=empty.sdf headless:=true
+    ros2 launch rover_gazebo sim.launch.py robot:=rover4      # 4WD Ackermann robot
 """
 import os
 
@@ -21,11 +22,14 @@ def generate_launch_description():
     pkg_description = get_package_share_directory('rover_description')
     pkg_ros_gz_sim = get_package_share_directory('ros_gz_sim')
 
+    robot = LaunchConfiguration('robot')
     world = LaunchConfiguration('world')
     headless = LaunchConfiguration('headless')
     x, y, yaw = LaunchConfiguration('x'), LaunchConfiguration('y'), LaunchConfiguration('yaw')
 
     args = [
+        DeclareLaunchArgument('robot', default_value='rover', choices=['rover', 'rover4'],
+                              description='rover = 2WD differential drive, rover4 = 4WD Ackermann steering'),
         DeclareLaunchArgument('world', default_value='rover_world.sdf',
                               description='World file name inside rover_gazebo/worlds (or absolute path)'),
         DeclareLaunchArgument('headless', default_value='false',
@@ -56,7 +60,7 @@ def generate_launch_description():
     )
 
     robot_description = ParameterValue(
-        Command(['xacro ', os.path.join(pkg_description, 'urdf', 'rover.urdf.xacro'), ' sim_gazebo:=true']),
+        Command(['xacro ', os.path.join(pkg_description, 'urdf', ''), robot, '.urdf.xacro sim_gazebo:=true']),
         value_type=str)
 
     robot_state_publisher = Node(
@@ -70,7 +74,7 @@ def generate_launch_description():
         package='ros_gz_sim',
         executable='create',
         output='screen',
-        arguments=['-topic', 'robot_description', '-name', 'rover',
+        arguments=['-topic', 'robot_description', '-name', robot,
                    '-x', x, '-y', y, '-z', '0.01', '-Y', yaw],
     )
 

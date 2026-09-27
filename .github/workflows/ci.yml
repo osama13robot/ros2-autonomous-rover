@@ -39,8 +39,11 @@ jobs:
         run: |
           source /opt/ros/jazzy/setup.bash
           source install/setup.bash
-          xacro src/rover_description/urdf/rover.urdf.xacro > /tmp/rover.urdf
-          python3 -c "import xml.etree.ElementTree as E; r=E.parse('/tmp/rover.urdf').getroot(); print(r.get('name'), len(r.findall('link')), 'links')"
+          for robot in rover rover4; do
+            xacro src/rover_description/urdf/$robot.urdf.xacro > /tmp/$robot.urdf
+            python3 -c "import sys, xml.etree.ElementTree as E; r=E.parse(sys.argv[1]).getroot(); print(r.get('name'), len(r.findall('link')), 'links')" /tmp/$robot.urdf
+          done
+          for f in src/rover_navigation/behavior_trees/*.xml; do python3 -c "import sys, xml.etree.ElementTree as E; E.parse(sys.argv[1]); print('ok', sys.argv[1])" "$f"; done
           for w in src/rover_gazebo/worlds/*.sdf; do python3 -c "import sys, xml.etree.ElementTree as E; E.parse(sys.argv[1]); print('ok', sys.argv[1])" "$w"; done
 
       - name: Launch files load
@@ -50,3 +53,4 @@ jobs:
           ros2 launch rover_bringup sim.launch.py --show-args > /dev/null
           ros2 launch rover_bringup robot.launch.py --show-args > /dev/null
           ros2 launch rover_description display.launch.py --show-args > /dev/null
+          python3 -c "import yaml; [yaml.safe_load(open(f)) for f in ['src/rover_navigation/config/nav2_params_rover4.yaml', 'src/rover_bringup/config/control_rover4.yaml']]; print('rover4 params ok')"

@@ -6,6 +6,9 @@ Publishes /cmd_vel_teleop (geometry_msgs/Twist) and /mode_request (std_msgs/Stri
 Hold a movement key to drive; releasing it stops the robot (a terminal cannot see key
 releases, so motion stops `key_timeout` seconds after the last key repeat).
 Set the parameter hold_to_drive:=false for classic "latched" behaviour instead.
+
+For the car-like rover4 (it cannot turn in place) use ackermann:=true: a/d then steer
+while driving forwards instead of rotating on the spot.
 """
 import os
 import select
@@ -35,6 +38,7 @@ HELP = r"""
            o  start / pause frontier exploration (in AUTO)
 
    Arrow keys work too.  A drive key pressed in AUTO takes over (-> MANUAL).
+   Car mode (rover4, ackermann:=true): a/d steer while driving forwards.
    CTRL-C to quit
  ---------------------------------------------------------------
 """
@@ -62,6 +66,7 @@ class TeleopKeyboard(Node):
         self.declare_parameter('accel_linear', 1.0)     # m/s^2 ramp for smooth starts
         self.declare_parameter('accel_angular', 4.0)    # rad/s^2
         self.declare_parameter('take_over_auto', True)
+        self.declare_parameter('ackermann', False)
 
         gp = lambda n: self.get_parameter(n).value
         self.lin, self.ang = gp('linear_speed'), gp('angular_speed')
@@ -70,6 +75,7 @@ class TeleopKeyboard(Node):
         self.dt = 1.0 / gp('rate')
         self.acc_lin, self.acc_ang = gp('accel_linear'), gp('accel_angular')
         self.take_over = gp('take_over_auto')
+        self.ackermann = gp('ackermann')
 
         self.cmd_pub = self.create_publisher(Twist, '/cmd_vel_teleop', 10)
         self.mode_pub = self.create_publisher(String, '/mode_request', 10)
@@ -99,7 +105,10 @@ class TeleopKeyboard(Node):
         if key in MOVES:
             if self.mode == 'AUTO' and self.take_over:
                 self.request_mode('manual')
-            self.target = MOVES[key]
+            lin, ang = MOVES[key]
+            if self.ackermann and lin == 0:
+                lin = 1          # a car cannot rotate in place: steer while rolling forwards
+            self.target = (lin, ang)
             self.last_key_time = now
         elif key in ('s', ' '):
             self.target = (0, 0)
@@ -159,7 +168,8 @@ class TeleopKeyboard(Node):
     def status_line(self):
         mode = self.mode
         colour = '\033[1;32m' if mode == 'AUTO' else '\033[1;33m'
-        return (f'\r\033[K {colour}[{mode}]\033[0m  v={self.v:+.2f} m/s  w={self.w:+.2f} rad/s  '
+        car = ' car' if self.ackermann else ''
+        return (f'\r\033[K {colour}[{mode}{car}]\033[0m  v={self.v:+.2f} m/s  w={self.w:+.2f} rad/s  '
                 f'| speed {self.lin:.2f} m/s, {self.ang:.2f} rad/s  | explore: {self.explore_state}')
 
 
